@@ -10,17 +10,28 @@ STATE_FILE = "state.json"
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
-NORMAL_STATUS = "operação normal"
+VALID_STATUSES = [
+    "operação normal",
+    "velocidade reduzida",
+    "operação parcial",
+    "circulação suspensa"
+]
 
-async def fetch_status():
+async def fetch_page_text():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         await page.goto(URL, wait_until="networkidle")
-        await page.wait_for_timeout(5000)
-        content = await page.content()
+        await page.wait_for_timeout(4000)
+        text = await page.inner_text("body")
         await browser.close()
-        return content.lower()
+        return text.lower()
+
+def parse_status(text):
+    for status in VALID_STATUSES:
+        if status in text:
+            return status
+    return "desconhecido"
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -48,13 +59,20 @@ async def main():
     state = load_state()
     last_status = state["last_status"]
 
-    text = await fetch_status()
+    text = await fetch_page_text()
+    detected_status = parse_status(text)
 
-    current_status = "NORMAL" if NORMAL_STATUS in text else "PROBLEM"
+    if detected_status == "desconhecido":
+        return
+
+    if detected_status == "operação normal":
+        current_status = "NORMAL"
+    else:
+        current_status = "PROBLEM"
 
     if current_status != last_status:
         if current_status == "PROBLEM":
-            send_telegram("⚠️ ALERTA: Linha 11-Coral com problema.")
+            send_telegram(f"⚠️ ALERTA: Linha 11-Coral com status: {detected_status.upper()}")
         else:
             send_telegram("✅ Linha 11-Coral normalizada.")
 
