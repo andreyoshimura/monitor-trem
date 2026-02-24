@@ -2,51 +2,23 @@ import os
 import json
 import asyncio
 import requests
-import unicodedata
 from datetime import datetime
 from playwright.async_api import async_playwright
 
-# ----------------------------
-# CONFIGURAÇÕES
-# ----------------------------
-
-URL = "https://www.diretodostrens.com.br/?codigo=11"
 STATE_FILE = "state.json"
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
-# Status que consideramos válidos
-VALID_STATUSES = [
-    "operacao normal",
-    "velocidade reduzida",
-    "operacao parcial",
-    "circulacao suspensa"
-]
+URL = "https://www.diretodostrens.com.br/?codigo=11"
 
 
 # ----------------------------
-# FUNÇÕES AUXILIARES
+# Telegram
 # ----------------------------
-
-def normalize(text: str) -> str:
-    """
-    Normaliza texto:
-    - Lowercase
-    - Remove acentos
-    """
-    text = text.lower()
-    text = unicodedata.normalize("NFD", text)
-    text = text.encode("ascii", "ignore").decode("utf-8")
-    return text
-
 
 def send_telegram(message: str):
-    """
-    Envia mensagem para o Telegram
-    """
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-
     requests.post(
         url,
         json={
@@ -57,26 +29,21 @@ def send_telegram(message: str):
     )
 
 
+# ----------------------------
+# State
+# ----------------------------
+
 def load_state():
-    """
-    Carrega estado persistido
-    """
     with open(STATE_FILE, "r") as f:
         return json.load(f)
 
 
 def save_state(state):
-    """
-    Salva estado local
-    """
     with open(STATE_FILE, "w") as f:
         json.dump(state, f)
 
 
 def commit_state():
-    """
-    Commit do state.json para manter persistência
-    """
     os.system("git config user.name 'github-actions'")
     os.system("git config user.email 'actions@github.com'")
     os.system("git add state.json")
@@ -85,43 +52,40 @@ def commit_state():
 
 
 # ----------------------------
-# PLAYWRIGHT
+# Playwright (captura JSON real)
 # ----------------------------
 
-async def fetch_page_text():
-    """
-    Abre navegador headless,
-    espera renderização JS,
-    retorna texto normalizado.
-    """
-
+async def fetch_status_from_api():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
 
-        # Carrega página
-        await page.goto(URL, wait_until="domcontentloaded")
+        status_value = None
 
-        # Aguarda JS terminar de renderizar
-        await page.wait_for_timeout(5000)
+        async def handle_response(response):
+            nonlocal status_value
 
-        # Captura texto visível da página
-        text = await page.locator("body").inner_text()
+            if "/api/status/codigo/11" in response.url:
+                try:
+                    data = await response.json()
+                    # Ajuste aqui se o campo for diferente
+                    status_value = data.get("status")
+                except:
+                    pass
+
+        page.on("response", handle_response)
+
+        await page.goto(URL, wait_until="networkidle")
+
+        # Aguarda até 10 segundos a API responder
+        for _ in range(20):
+            if status_value:
+                break
+            await page.wait_for_timeout(500)
 
         await browser.close()
 
-        return normalize(text)
-
-
-def parse_status(text: str) -> str:
-    """
-    Procura status válido dentro do texto da página
-    """
-    for status in VALID_STATUSES:
-        if status in text:
-            return status
-
-    return "desconhecido"
+        return status_value
 
 
 # ----------------------------
@@ -134,22 +98,15 @@ async def main():
     last_status = state.get("last_status", "UNKNOWN")
     last_heartbeat = state.get("last_heartbeat_date", "")
 
-    # Busca página
-    text = await fetch_page_text()
-    print("------ DEBUG TEXTO INICIO ------")
-    print(text[:2000])
-    print("------ DEBUG TEXTO FIM ------")
-    # Detecta status
-    detected_status = parse_status(text)
+    detected_status = await fetch_status_from_api()
 
     print(f"Status detectado: {detected_status}")
 
-    if detected_status == "desconhecido":
-        print("Status não identificado. Nenhuma ação tomada.")
+    if not detected_status:
+        print("Não foi possível capturar status.")
         return
 
-    # Interpretação de estado
-    if detected_status == "operacao normal":
+    if detected_status.lower() == "operação normal":
         current_status = "NORMAL"
     else:
         current_status = "PROBLEM"
@@ -158,10 +115,7 @@ async def main():
 
     today = datetime.utcnow().strftime("%Y-%m-%d")
 
-    # ----------------------------
-    # ALERTA EM MUDANÇA DE ESTADO
-    # ----------------------------
-
+    # Mudança de estado
     if current_status != last_status:
 
         if current_status == "PROBLEM":
@@ -173,17 +127,13 @@ async def main():
 
         state["last_status"] = current_status
 
-    # ----------------------------
-    # HEARTBEAT DIÁRIO
-    # ----------------------------
-
+    # Heartbeat diário
     if last_heartbeat != today:
         send_telegram(
             f"🟢 Monitor ativo. Status atual: {detected_status.upper()}"
         )
         state["last_heartbeat_date"] = today
 
-    # Salva estado
     save_state(state)
     commit_state()
 
