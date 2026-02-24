@@ -87,6 +87,11 @@ Depois disso, só envia mensagem se houver mudança de estado.
 
 Execução média: \~1 segundo
 
+## Roadmap
+
+Adicionar a contigência de api 
+https://ccm.artesp.sp.gov.br/metroferroviario/api/status/
+
 ------------------------------------------------------------------------
 
 Gerado em: 2026-02-24 02:32:17 UTC
