@@ -1,37 +1,33 @@
-import requests
 import os
 import json
-import hashlib
-from bs4 import BeautifulSoup
+import asyncio
+import requests
+from playwright.async_api import async_playwright
 
-URL = "https://www.diretodostrens.com.br/?id=6269987608068096"
+URL = "https://www.diretodostrens.com.br/?codigo=11"
+STATE_FILE = "state.json"
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
-STATE_FILE = "state.json"
+NORMAL_STATUS = "operação normal"
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0"
-}
-
-PROBLEM_STATUSES = [
-    "velocidade reduzida",
-    "operação parcial",
-    "interrup",
-    "paralis",
-    "falha",
-    "problema",
-    "circulação suspensa"
-]
+async def fetch_status():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto(URL, wait_until="networkidle")
+        await page.wait_for_timeout(5000)
+        content = await page.content()
+        await browser.close()
+        return content.lower()
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
+    requests.post(url, json={
         "chat_id": CHAT_ID,
         "text": message
-    }
-    requests.post(url, json=payload, timeout=10)
+    }, timeout=10)
 
 def load_state():
     with open(STATE_FILE, "r") as f:
@@ -48,48 +44,23 @@ def commit_state():
     os.system("git commit -m 'update state' || exit 0")
     os.system("git push")
 
-def fetch_page():
-    r = requests.get(URL, headers=HEADERS, timeout=15)
-    r.raise_for_status()
-    return r.text
-
-def extract_text(html):
-    soup = BeautifulSoup(html, "html.parser")
-    return soup.get_text(" ", strip=True).lower()
-
-def detect_problem(text):
-    if "operação normal" in text:
-        return False
-    return any(keyword in text for keyword in PROBLEM_STATUSES)
-
-def hash_text(text):
-    return hashlib.sha256(text.encode()).hexdigest()
-
-def main():
+async def main():
     state = load_state()
     last_status = state["last_status"]
-    last_hash = state["last_message_hash"]
 
-    html = fetch_page()
-    text = extract_text(html)
+    text = await fetch_status()
 
-    current_hash = hash_text(text)
-    has_problem = detect_problem(text)
-    current_status = "PROBLEM" if has_problem else "NORMAL"
+    current_status = "NORMAL" if NORMAL_STATUS in text else "PROBLEM"
 
-    if current_status != last_status or current_hash != last_hash:
-
+    if current_status != last_status:
         if current_status == "PROBLEM":
-            send_telegram("⚠️ ALERTA: Problema detectado na Linha 11-Coral.")
-        
-        elif current_status == "NORMAL" and last_status == "PROBLEM":
+            send_telegram("⚠️ ALERTA: Linha 11-Coral com problema.")
+        else:
             send_telegram("✅ Linha 11-Coral normalizada.")
 
         state["last_status"] = current_status
-        state["last_message_hash"] = current_hash
-
         save_state(state)
         commit_state()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
