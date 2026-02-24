@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import requests
+from datetime import datetime
 from playwright.async_api import async_playwright
 
 URL = "https://www.diretodostrens.com.br/?codigo=11"
@@ -22,7 +23,7 @@ async def fetch_page_text():
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         await page.goto(URL, wait_until="networkidle")
-        await page.wait_for_timeout(4000)
+        await page.wait_for_timeout(3000)
         text = await page.inner_text("body")
         await browser.close()
         return text.lower()
@@ -58,11 +59,15 @@ def commit_state():
 async def main():
     state = load_state()
     last_status = state["last_status"]
+    last_heartbeat = state["last_heartbeat_date"]
 
     text = await fetch_page_text()
     detected_status = parse_status(text)
 
+    print(f"Status detectado: {detected_status}")
+
     if detected_status == "desconhecido":
+        print("Status não identificado. Nenhuma ação tomada.")
         return
 
     if detected_status == "operação normal":
@@ -70,6 +75,11 @@ async def main():
     else:
         current_status = "PROBLEM"
 
+    print(f"Estado interpretado: {current_status}")
+
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+
+    # Alert on state change
     if current_status != last_status:
         if current_status == "PROBLEM":
             send_telegram(f"⚠️ ALERTA: Linha 11-Coral com status: {detected_status.upper()}")
@@ -77,8 +87,15 @@ async def main():
             send_telegram("✅ Linha 11-Coral normalizada.")
 
         state["last_status"] = current_status
-        save_state(state)
-        commit_state()
+
+    # Daily heartbeat
+    if last_heartbeat != today:
+        send_telegram(f"🟢 Monitor ativo.
+Status atual: {detected_status.upper()}")
+        state["last_heartbeat_date"] = today
+
+    save_state(state)
+    commit_state()
 
 if __name__ == "__main__":
     asyncio.run(main())
