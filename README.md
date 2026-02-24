@@ -1,47 +1,92 @@
-# Monitor CPTM – Linha 11 (Coral) – Telegram + GitHub Actions
+# Monitor CPTM -- Linha 11 (Coral)
 
-Este projeto monitora o **status da Linha 11 (Coral)** usando a **API do app oficial da CPTM** e envia alertas para um **grupo/canal no Telegram** via bot.
+Monitor automático do status da **Linha 11‑Coral** utilizando a API
+oficial do app da CPTM.
+
+API utilizada: https://api.cptm.sp.gov.br/AppCPTM/v1/Linhas/ObterStatus
+
+------------------------------------------------------------------------
 
 ## Como funciona
-- Consulta JSON em: `https://api.cptm.sp.gov.br/AppCPTM/v1/Linhas/ObterStatus`
-- Filtra a linha pelo campo `linhaId == 11`
-- Interpreta:
-  - **NORMAL** apenas quando `status` for `Operação Normal`
-  - **PROBLEM** para qualquer outro status
-- Envia alerta **somente quando muda** (NORMAL ↔ PROBLEM)
-- Envia 1 **heartbeat diário** para comprovar que está rodando
-- Se a API falhar / JSON mudar e não der para extrair status → **não alerta** (evita falso positivo)
 
-## Setup (GitHub)
-1. Faça upload destes arquivos no seu repositório.
-2. Vá em **Settings → Secrets and variables → Actions → New repository secret** e crie:
-   - `BOT_TOKEN` (token do BotFather)
-   - `CHAT_ID` (id do grupo/canal/chat, ex: `-1001234567890`)
-3. Vá em **Actions** e rode manualmente:
-   - `Train Monitor Linha 11` → **Run workflow**
+1.  Consulta a API oficial da CPTM (JSON público).
+2.  Filtra `linhaId == 11`.
+3.  Interpreta o status:
+    -   NORMAL → quando `status` = "Operação Normal"
+    -   PROBLEM → qualquer outro status
+4.  Envia alerta no Telegram somente quando houver mudança.
+5.  Envia 1 heartbeat diário para confirmar que o monitor está ativo.
+6.  Persiste estado em `state.json`.
+
+------------------------------------------------------------------------
+
+## Estrutura do projeto
+
+-   monitor.py → Script principal
+-   state.json → Estado persistido
+-   requirements.txt → Dependências
+-   .github/workflows/monitor.yml → GitHub Actions
+
+------------------------------------------------------------------------
+
+## Configuração
+
+### 1️⃣ Criar Secrets no GitHub
+
+Vá em: Settings → Secrets and variables → Actions
+
+Crie:
+
+-   BOT_TOKEN → Token do BotFather
+-   CHAT_ID → ID do grupo ou canal (ex: -1001234567890)
+
+------------------------------------------------------------------------
+
+### 2️⃣ Executar manualmente
+
+Actions → Train Monitor Linha 11 → Run workflow
+
+------------------------------------------------------------------------
 
 ## Frequência
-O workflow roda a cada 5 minutos (cron):
-- `.github/workflows/monitor.yml` → `*/5 * * * *`
 
-Se quiser menos carga, use `*/10 * * * *` (10 min) ou `*/15 * * * *` (15 min).
+Por padrão roda a cada 5 minutos:
+
+    */5 * * * *
+
+Você pode alterar em: .github/workflows/monitor.yml
+
+------------------------------------------------------------------------
 
 ## Como validar que está funcionando
-No GitHub:
-- **Actions → Train Monitor Linha 11 → (última execução) → Run monitor**
-- Você deve ver no log:
-  - `Status (texto): ...`
-  - `Estado interpretado: ...`
+
+No GitHub (log do workflow):
+
+Deve aparecer:
+
+    Status (texto): Operação Normal
+    Estado interpretado: NORMAL
 
 No Telegram:
-- Você receberá 1 mensagem diária tipo:
-  - `🟢 Monitor ativo (Linha 11-Coral). Status atual: Operação Normal`
 
-## Arquivos
-- `monitor.py` → script principal
-- `state.json` → estado persistido (último status e último heartbeat)
-- `.github/workflows/monitor.yml` → GitHub Actions
-- `requirements.txt` → dependências
+Primeira execução envia:
 
-## Observação
-O script faz commit/push do `state.json` para persistir estado entre execuções do GitHub Actions.
+    Monitor ativo (Linha 11-Coral). Status atual: Operação Normal
+
+Depois disso, só envia mensagem se houver mudança de estado.
+
+------------------------------------------------------------------------
+
+## Arquitetura
+
+-   Sem Playwright
+-   Sem scraping
+-   Sem token privado
+-   Sem engenharia reversa
+-   Apenas JSON oficial da CPTM
+
+Execução média: \~1 segundo
+
+------------------------------------------------------------------------
+
+Gerado em: 2026-02-24 02:32:17 UTC
