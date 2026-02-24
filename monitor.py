@@ -90,8 +90,7 @@ async def main():
 
     # Daily heartbeat
     if last_heartbeat != today:
-        send_telegram(f"🟢 Monitor ativo.
-Status atual: {detected_status.upper()}")
+        send_telegram(f"🟢 Monitor ativo. Status atual: {detected_status.upper()}")
         state["last_heartbeat_date"] = today
 
     save_state(state)
