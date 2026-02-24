@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import requests
+import unicodedata
 from datetime import datetime
 from playwright.async_api import async_playwright
 
@@ -12,42 +13,45 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
 
 VALID_STATUSES = [
-    "operação normal",
+    "operacao normal",
     "velocidade reduzida",
-    "operação parcial",
-    "circulação suspensa"
+    "operacao parcial",
+    "circulacao suspensa"
 ]
 
-async def fetch_page_text():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-        await page.goto(URL, wait_until="networkidle")
-        await page.wait_for_timeout(3000)
-        text = await page.inner_text("body")
-        await browser.close()
-        return text.lower()
 
-def parse_status(text):
-    for status in VALID_STATUSES:
-        if status in text:
-            return status
-    return "desconhecido"
+# ----------------------------
+# Utils
+# ----------------------------
+
+def normalize(text: str) -> str:
+    text = text.lower()
+    text = unicodedata.normalize("NFD", text)
+    text = text.encode("ascii", "ignore").decode("utf-8")
+    return text
+
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(url, json={
-        "chat_id": CHAT_ID,
-        "text": message
-    }, timeout=10)
+    requests.post(
+        url,
+        json={
+            "chat_id": CHAT_ID,
+            "text": message
+        },
+        timeout=10
+    )
+
 
 def load_state():
     with open(STATE_FILE, "r") as f:
         return json.load(f)
 
+
 def save_state(state):
     with open(STATE_FILE, "w") as f:
         json.dump(state, f)
+
 
 def commit_state():
     os.system("git config user.name 'github-actions'")
@@ -56,12 +60,46 @@ def commit_state():
     os.system("git commit -m 'update state' || exit 0")
     os.system("git push")
 
+
+# ----------------------------
+# Playwright
+# ----------------------------
+
+async def fetch_page_text():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+
+        await page.goto(URL, wait_until="networkidle")
+
+        # Espera explicitamente a linha 11 aparecer
+        await page.wait_for_selector("text=Linha 11", timeout=10000)
+
+        text = await page.locator("body").inner_text()
+
+        await browser.close()
+
+        return normalize(text)
+
+
+def parse_status(text):
+    for status in VALID_STATUSES:
+        if status in text:
+            return status
+    return "desconhecido"
+
+
+# ----------------------------
+# Main
+# ----------------------------
+
 async def main():
     state = load_state()
-    last_status = state["last_status"]
-    last_heartbeat = state["last_heartbeat_date"]
+    last_status = state.get("last_status", "UNKNOWN")
+    last_heartbeat = state.get("last_heartbeat_date", "")
 
     text = await fetch_page_text()
+
     detected_status = parse_status(text)
 
     print(f"Status detectado: {detected_status}")
@@ -70,7 +108,7 @@ async def main():
         print("Status não identificado. Nenhuma ação tomada.")
         return
 
-    if detected_status == "operação normal":
+    if detected_status == "operacao normal":
         current_status = "NORMAL"
     else:
         current_status = "PROBLEM"
@@ -79,22 +117,27 @@ async def main():
 
     today = datetime.utcnow().strftime("%Y-%m-%d")
 
-    # Alert on state change
+    # Mudança de estado
     if current_status != last_status:
         if current_status == "PROBLEM":
-            send_telegram(f"⚠️ ALERTA: Linha 11-Coral com status: {detected_status.upper()}")
+            send_telegram(
+                f"⚠️ ALERTA: Linha 11-Coral com status: {detected_status.upper()}"
+            )
         else:
             send_telegram("✅ Linha 11-Coral normalizada.")
 
         state["last_status"] = current_status
 
-    # Daily heartbeat
+    # Heartbeat diário
     if last_heartbeat != today:
-        send_telegram(f"🟢 Monitor ativo. Status atual: {detected_status.upper()}")
+        send_telegram(
+            f"🟢 Monitor ativo. Status atual: {detected_status.upper()}"
+        )
         state["last_heartbeat_date"] = today
 
     save_state(state)
     commit_state()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
