@@ -136,7 +136,9 @@ async def main():
 
     # Busca página
     text = await fetch_page_text()
-
+    print("------ DEBUG TEXTO INICIO ------")
+    print(text[:2000])
+    print("------ DEBUG TEXTO FIM ------")
     # Detecta status
     detected_status = parse_status(text)
 
