@@ -1,131 +1,51 @@
-# 🚆 Monitor Linha 11-Coral (CPTM)
+# Monitor CPTM – Linha 11 Coral (Telegram)
 
-Monitor automático da Linha 11-Coral via site Direto dos Trens.
+Monitora a situação da **Linha 11 (Coral)** no site **Direto dos Trens** e envia alerta no Telegram **somente quando muda para PROBLEMA** (e opcionalmente quando normaliza).
 
-- Roda no GitHub Actions
-- Usa Playwright (browser real)
-- Envia alerta no Telegram somente quando o status muda
-- Envia 1 mensagem diária confirmando que está ativo
-- Evita falso positivo
-- Sem spam
+## Como funciona (sem token / sem API privada)
+O site carrega os dados via chamadas XHR para um backend (Firebase/App Engine).  
+Este projeto usa **Playwright** para abrir a página e **capturar a resposta JSON dessas chamadas**, evitando:
+- falso positivo por texto de cookie/ads,
+- mudanças de layout do HTML.
 
----
+## Pré-requisitos
+- Um bot do Telegram (token do BotFather)
+- O `chat_id` (grupo ou usuário)
 
-## 🔎 O que ele monitora
+## Configurar no GitHub
+1. Suba este repositório no GitHub.
+2. Vá em **Settings → Secrets and variables → Actions → New repository secret** e crie:
+   - `BOT_TOKEN` = token do bot
+   - `CHAT_ID` = id do chat (grupo/usuário)
 
-URL monitorada:
+## Rodar manualmente
+Actions → **Train Monitor Linha 11** → **Run workflow**
 
-https://www.diretodostrens.com.br/?codigo=11
+## Agendamento
+O workflow roda a cada 5 minutos (ajuste em `.github/workflows/monitor.yml`).
 
-Status reconhecidos:
+## O que é considerado “problema”
+Qualquer `situacao` diferente de **Operação Normal** (com ou sem acento) vira `PROBLEM`.
 
-- Operação normal
-- Velocidade reduzida
-- Operação parcial
-- Circulação suspensa
+Estados desconhecidos (sem JSON válido) são ignorados (não alertam).
 
----
+## Mensagens
+- Alerta (mudou NORMAL → PROBLEM)
+- Normalizou (mudou PROBLEM → NORMAL)
+- Heartbeat (1x/dia): “Monitor ativo …”
 
-## 🚨 Quando envia alerta
+## Arquivos principais
+- `monitor.py` – captura JSON e envia Telegram
+- `state.json` – guarda `last_status` e `last_heartbeat_date`
+- `.github/workflows/monitor.yml` – GitHub Actions
 
-### Envia mensagem quando:
+## Debug rápido
+Se precisar debugar, rode manualmente e abra o log:
+Actions → execução → job `monitor` → step `Run monitor`
 
-- NORMAL → PROBLEM
-- PROBLEM → NORMAL
+Você deve ver algo como:
+- `JSON capturado: situacao=Operação Normal …`
+- `Estado interpretado: NORMAL`
 
-### Envia também:
+Se aparecer `Nenhum JSON de status foi capturado`, o site pode ter mudado o endpoint (ajustar filtro de URL/JSON).
 
-1 heartbeat diário:
-
-🟢 Monitor ativo.
-Status atual: OPERAÇÃO NORMAL
-
----
-
-## 📁 Estrutura do projeto
-
-train-monitor/
-│
-├── monitor.py
-├── requirements.txt
-├── state.json
-└── .github/workflows/monitor.yml
-
----
-
-## ⚙️ Configuração
-
-### 1️⃣ Criar Bot no Telegram
-
-1. Falar com @BotFather  
-2. Criar bot com /newbot  
-3. Copiar o BOT_TOKEN  
-
-Adicionar o bot no grupo.
-
-Obter CHAT_ID usando:
-
-https://api.telegram.org/botSEU_TOKEN/getUpdates
-
----
-
-### 2️⃣ Configurar Secrets no GitHub
-
-Repositório → Settings → Secrets and variables → Actions
-
-Adicionar:
-
-- BOT_TOKEN
-- CHAT_ID
-
----
-
-### 3️⃣ Executar
-
-Ir em:
-
-Actions → Train Monitor Linha 11 → Run workflow
-
----
-
-## ⏱ Frequência
-
-O monitor roda a cada 10 minutos.
-
----
-
-## 🧠 Como funciona
-
-1. GitHub Actions roda o workflow
-2. Container oficial Playwright já com Chromium
-3. Abre navegador headless
-4. Extrai status real renderizado
-5. Compara com estado anterior
-6. Decide se envia alerta
-7. Atualiza state.json
-
----
-
-## 📊 Logs
-
-Nos logs do GitHub você verá:
-
-Status detectado: operação normal
-Estado interpretado: NORMAL
-
-Isso confirma que está funcionando mesmo sem alerta.
-
----
-
-## 🔐 Segurança
-
-- Token e Chat ID ficam em Secrets
-- Nenhuma credencial no código
-- Projeto pode ser público com segurança
-
----
-
-## 📌 Observação
-
-Se o site mudar estrutura ou texto dos status,
-o parser pode precisar de ajuste.
